@@ -12,7 +12,7 @@ __To export the storage locations for all assets, set `external_location = ""`__
 ### Get Catalogs with a Default Location that contain a specific External Location path
 This gets all Managed Catalogs that have `external_location` as a part of their root path.
 
-To run this function succesfully, the user running the function needs to have `USE CATALOG` permissions in UC for the  being checked, and `SELECT` permissions to the `system.information_schema.catalogs`.
+To run this function succesfully, the user running the function needs to have `USE CATALOG` permissions in UC for the catalogs being checked, and `SELECT` permissions to the `system.information_schema.catalogs`.
 
 #### Examples
 
@@ -24,7 +24,7 @@ get_managed_catalogs(external_location)
 ### Get Schemas with a Default Location that contain a specific External Location path
 This gets all Managed Schemas that have `external_location` as a part of their root path.
 
-To run this function succesfully, the user running the function needs to have `SELECT` permissions in UC for the Schemas being checked, and `SELECT` permissions to the `system.information_schema.schemata`.
+To run this function succesfully, the user running the function needs to have `USE SCHEMA` permissions in UC for the schemas being checked, and `SELECT` permissions to the `system.information_schema.schemata`.
 
 #### Examples
 
