@@ -1,19 +1,41 @@
 from pyspark.sql.functions import concat, col, lit
 from pyspark.sql.types import StructType, StructField, StringType
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, Row
 
-spark = SparkSession.builder \
-    .appName("external_locations_helper_tables") \
-    .getOrCreate()
+spark = SparkSession.builder.appName("external_locations_helper_tables").getOrCreate()
 
 
-def get_external_tables_list(catalog: str = None, schema: str = None):
-
-    tables = spark.sql(
-        """
-    SELECT * FROM system.information_schema.tables where table_type = 'EXTERNAL' and data_source_format != 'UNITY_CATALOG'
+def __get_tables_list(
+    table_type: str = None,
+    catalog: str = None,
+    schema: str = None,
+    system_table: str = "system.information_schema.tables",
+):
     """
-    ).withColumn(
+    Retrieves the list of tables from system.information_schema.tables filter by table_type, catalog, or schema.
+
+    Args:
+        table_type (str): [Optional] Filter for either MANAGED or EXTERNAL tables
+        catalog (str): [Optional] Filter for specific catalog name
+        schema (str): [Optional] Filter for specific schema name
+        system_table (str): [Optional] Specify which system_table to use
+    Returns:
+        [Row]: Array of pyspark.sql.Row
+    """
+
+    # Generate SQL query
+    sql_query = f"""
+        SELECT * FROM {system_table} where data_source_format != 'UNITY_CATALOG'
+    """
+    if table_type == None:
+        sql_query = sql_query + "and table_type in ('MANAGED','EXTERNAL')"
+    elif table_type.upper() == "EXTERNAL":
+        sql_query = sql_query + "and table_type = 'EXTERNAL'"
+
+    elif table_type.upper() == "MANAGED":
+        sql_query = sql_query + "and table_type = 'MANAGED'"
+
+    tables = spark.sql(sql_query).withColumn(
         "full_table_name",
         concat(
             lit("`"),
@@ -34,41 +56,81 @@ def get_external_tables_list(catalog: str = None, schema: str = None):
     if schema:
         tables = tables.filter(col("table_schema") == f"{schema}")
 
-    tables_array = tables.collect()
+    # Select required columns
+    tables_array = tables.select(
+        "table_catalog",
+        "table_schema",
+        "table_name",
+        "full_table_name",
+        "table_type",
+        "table_owner",
+        "created",
+        "created_by",
+        "last_altered",
+        "last_altered_by",
+        "data_source_format",
+    ).collect()
 
-    return [table["full_table_name"] for table in tables_array]
+    return tables_array
 
 
-def get_external_location_for_table(table_name: str) -> str:
+def __get_external_location_for_table(table_name: str) -> str:
+    """
+    Returns the storage location for a table.
+
+    Args:
+        table_name (str):  Full table path i.e. `catalog`.`schema`.`table`
+
+    Returns:
+        str: Cloud storage location for the table
+    """
     from pyspark.sql.functions import col
+    try:
+        table_loc = (
+            spark.sql(f"describe table extended {table_name}")
+            .filter(col("col_name") == "Location")
+            .collect()
+        )
+        return table_loc[0]["data_type"]
+    except Exception as e:
+        print(f"Error Checking Table: {table_name}")
+        return f"Error Checking Table: {table_name}"
+        
+def get_table_paths(
+    external_loc: str,
+    table_type: str = None,
+    catalog: str = None,
+    schema: str = None,
+    system_table: str = "system.information_schema.tables",
+):
 
-    table_loc = (
-        spark.sql(f"describe table extended {table_name}")
-        .filter(col("col_name") == "Location")
-        .collect()
-    )
-    return table_loc[0]["data_type"]
+    """
+    Checks to see which tables root location contain a specific string.
 
-
-def get_external_tables(external_loc: str, catalog: str = None, schema: str = None):
-    external_tables_list = get_external_tables_list(catalog=catalog, schema=schema)
+    Args:
+        external_loc (str): Filter tables that contain this str within their root location in cloud storage.
+        table_type (str): [Optional] Filter for either MANAGED or EXTERNAL tables
+        catalog (str): [Optional] Filter for specific catalog name
+        schema (str): [Optional] Filter for specific schema name
+        system_table (str): [Optional] Specify which system_table to use
+    Returns:
+        DataFrame: Array of pyspark.sql.Row
+    """
+    tables_list = __get_tables_list(catalog=catalog, schema=schema)
 
     positive_tables = []
 
-    for table in external_tables_list:
-        print(f"Checking External Table: {table}", end="\r", flush=True)
-        location = get_external_location_for_table(table)
-        if external_loc in location.lower():
-            table_details = {"table_name": table, "path": location}
-            positive_tables.append(table_details)
+    for table in tables_list:
+        full_table_name = table["full_table_name"]
+        print(f"Checking Table: {full_table_name}", end="\r", flush=True)
 
-    # Define the schema for the DataFrame
-    schema = StructType(
-        [
-            StructField("table_name", StringType(), nullable=False),
-            StructField("path", StringType(), nullable=False),
-        ]
-    )
+        table_location = __get_external_location_for_table(full_table_name)
 
-    # Create the DataFrame
-    return spark.createDataFrame(positive_tables, schema)
+        if external_loc.lower() in table_location.lower():
+            table_row = Row(**table.asDict(), table_path=table_location)
+            positive_tables.append(table_row)
+
+    if len(positive_tables) > 0:
+        return spark.createDataFrame(positive_tables)
+    else:
+        spark.createDataFrame([])
