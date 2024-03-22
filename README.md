@@ -1,5 +1,5 @@
 # Databricks External Locations Tool
-This repository enables users to search assets stored within Databricks Unity Catalog to see if those assets are stored within a specific location in cloud object storage. The assets supported include:
+This repository enables users to check if assets stored within Databricks Unity Catalog are stored within a specific location in cloud object storage. The list of assets supported include:
 
 - Managed Catalogs
 - Managed Schemas
