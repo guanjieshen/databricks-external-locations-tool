@@ -6,7 +6,7 @@ This repository enables users to check if assets stored within Databricks Unity 
 - Managed Tables
 - External Tables
 
-__To export the storage locations for all assets, set `external_location = ""`__
+__Tip: To generically export the storage locations for all assets, set `external_location = ""`__
 
 
 ### Get Catalogs with a Default Location that contain a specific External Location path
